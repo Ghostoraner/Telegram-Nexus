@@ -8,7 +8,7 @@
 ## Установка и первый запуск
 ```bash
 git clone https://github.com/Ghostoraner/Telegram-Nexus.git
-cd "Telegram Nexus"
+cd Telegram-Nexus
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
