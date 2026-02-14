@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>NEXUS CONTROL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { background: #0f172a; color: #f1f5f9; font-family: 'Inter', sans-serif; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+        .console { height: 200px; overflow-y: auto; background: #000; font-family: monospace; font-size: 13px; color: #4ade80; border-top: 2px solid #3b82f6; }
+        .input-field { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 8px; width: 100%; outline: none; }
+        .input-field:focus { border-color: #3b82f6; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+    <div id="app" class="flex flex-1 overflow-hidden">
+
+        <div class="w-64 bg-slate-900 p-6 flex flex-col gap-2 border-r border-slate-800">
+            <h1 class="text-xl font-black text-blue-500 mb-6 tracking-tighter">NEXUS COMMAND</h1>
+            <button @click="tab = 'sessions'" :class="tab === 'sessions' ? 'bg-blue-600' : 'hover:bg-slate-800'" class="p-3 rounded-lg text-left transition">📂 Сессии</button>
+            <button @click="tab = 'spam'" :class="tab === 'spam' ? 'bg-blue-600' : 'hover:bg-slate-800'" class="p-3 rounded-lg text-left transition">💬 Рассылка</button>
+        </div>
+
+        <div class="flex-1 flex flex-col">
+            <div class="p-8 flex-1 overflow-y-auto">
+
+                <div v-if="tab === 'sessions'" class="space-y-6">
+                    <h2 class="text-2xl font-bold">Управление аккаунтами</h2>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="card space-y-4">
+                            <h3 class="font-bold text-blue-400">Добавить аккаунт (Номер)</h3>
+                            <div v-if="authStep === 1" class="space-y-3">
+                                <input v-model="auth.api_id" placeholder="API ID" class="input-field">
+                                <input v-model="auth.api_hash" placeholder="API HASH" class="input-field">
+                                <input v-model="auth.phone" placeholder="+1...." class="input-field">
+                                <button @click="sendCode" class="w-full bg-blue-600 p-3 rounded-lg font-bold">Получить код</button>
+                            </div>
+                            <div v-if="authStep === 2" class="space-y-3">
+                                <input v-model="auth.code" placeholder="Код из Telegram" class="input-field text-center text-xl">
+                                <input v-if="need2FA" v-model="auth.password" type="password" placeholder="Облачный пароль" class="input-field">
+                                <button @click="signIn" class="w-full bg-green-600 p-3 rounded-lg font-bold">Подтвердить вход</button>
+                                <button @click="authStep = 1" class="w-full text-xs text-slate-500 underline">Назад</button>
+                            </div>
+                            <hr class="border-slate-700">
+                            <h3 class="font-bold text-blue-400">Загрузить .session файл</h3>
+                            <input type="file" @change="uploadFile" class="text-sm text-slate-400 file:bg-slate-700 file:text-white file:border-0 file:px-4 file:py-2 file:rounded-lg cursor-pointer">
+                        </div>
+
+                        <div class="card">
+                            <h3 class="font-bold text-blue-400 mb-4">Активные сессии</h3>
+                            <div class="space-y-2">
+                                {% raw %}
+                                <div v-for="s in sessions" class="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                                    <span class="font-mono text-sm">{{ s.name }}</span>
+                                    <span class="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded">АКТИВЕН</span>
+                                </div>
+                                {% endraw %}
+                                <div v-if="sessions.length === 0" class="text-slate-500 italic text-sm text-center py-4">Нет загруженных аккаунтов</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="tab === 'spam'" class="max-w-xl mx-auto card space-y-4">
+                    <h2 class="text-2xl font-bold">Быстрая рассылка</h2>
+                    <input v-model="form.target" placeholder="@username" class="input-field">
+                    <textarea v-model="form.text" rows="4" placeholder="Текст сообщения..." class="input-field"></textarea>
+                    <button @click="runTask('message')" class="w-full bg-blue-600 p-4 rounded-lg font-bold">ЗАПУСТИТЬ</button>
+                </div>
+
+            </div>
+
+            <div class="console p-4">
+                <div class="flex justify-between items-center mb-2 border-b border-white/10 pb-1">
+                    <span class="text-[10px] text-slate-500 uppercase tracking-widest">System Logs</span>
+                    <button @click="logs = []" class="text-[10px] hover:text-white">[Очистить]</button>
+                </div>
+                {% raw %}
+                <div v-for="log in logs" class="mb-1">
+                    <span class="text-slate-600">></span> {{ log }}
+                </div>
+                {% endraw %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    tab: 'sessions',
+                    sessions: [],
+                    logs: [],
+                    authStep: 1,
+                    need2FA: false,
+                    auth: { phone: '', api_id: '', api_hash: '', code: '', password: '' },
+                    form: { target: '', text: '' }
+                }
+            },
+            mounted() {
+                this.loadAccs();
+                this.connectWS();
+            },
+            methods: {
+                async loadAccs() {
+                    const res = await fetch('/api/sessions');
+                    this.sessions = await res.json();
+                },
+                async uploadFile(e) {
+                    const file = e.target.files[0];
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    await fetch('/api/upload_session', { method: 'POST', body: fd });
+                    this.loadAccs();
+                },
+                async sendCode() {
+                    const fd = new FormData();
+                    fd.append('phone', this.auth.phone);
+                    fd.append('api_id', this.auth.api_id);
+                    fd.append('api_hash', this.auth.api_hash);
+                    const res = await fetch('/api/auth/send_code', { method: 'POST', body: fd });
+                    if (res.ok) this.authStep = 2;
+                },
+                async signIn() {
+                    const fd = new FormData();
+                    fd.append('phone', this.auth.phone);
+                    fd.append('code', this.auth.code);
+                    if (this.auth.password) fd.append('password', this.auth.password);
+                    const res = await fetch('/api/auth/signin', { method: 'POST', body: fd });
+                    const data = await res.json();
+                    if (data.status === 'need_2fa') this.need2FA = true;
+                    else if (res.ok) {
+                        this.authStep = 1;
+                        this.loadAccs();
+                    }
+                },
+                async runTask(type) {
+                    await fetch(`/api/run/${type}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(this.form)
+                    });
+                },
+                connectWS() {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/logs`);
+                    ws.onmessage = (e) => {
+                        this.logs.push(e.data);
+                        this.$nextTick(() => {
+                            const c = document.querySelector('.console');
+                            c.scrollTop = c.scrollHeight;
+                        });
+                    };
+                    ws.onclose = () => setTimeout(this.connectWS, 2000);
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
