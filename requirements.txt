@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-hydrogram
-jinja2
-python-multipart
-websockets
-aiofiles
